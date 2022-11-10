@@ -5,18 +5,21 @@ from typing import Union, List
 
 # ============================= Positional encoding =============================
 
-class PositionalEncoding(nn.Module):
 
+class PositionalEncoding(nn.Module):
     def __init__(self, max_seq_len: int, embedding_dim: int):
         super().__init__()
         # Defining our positional encoding array, with `max_seq_len` rows
         # This is an advantage of using sinusoidal encoding: we can easily expand to sequences of greater length without adding more learned params
-        angles = t.outer(t.arange(max_seq_len), 1 / 10000 ** (2 * t.arange(embedding_dim//2) / embedding_dim))
+        angles = t.outer(
+            t.arange(max_seq_len),
+            1 / 10000 ** (2 * t.arange(embedding_dim // 2) / embedding_dim),
+        )
         pe = t.zeros((max_seq_len, embedding_dim))
         pe[:, ::2] = t.sin(angles)
         pe[:, 1::2] = t.cos(angles)
         # Register array as a buffer, rather than parameter (we don't want it to be updated by gradient descent)
-        self.register_buffer('pe', pe)
+        self.register_buffer("pe", pe)
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         """
@@ -25,11 +28,11 @@ class PositionalEncoding(nn.Module):
         batch, seq_len, embedding_dim = x.shape
         # We slice the positional encoding, so it's the same shape as x
         # This is equivalent to just using an nn.Embedding, but having the input be t.arange(seq_len)
-        return x + self.pe[:seq_len, :] # type: ignore
-
+        return x + self.pe[:seq_len, :]  # type: ignore
 
 
 # ============================= Embedding =============================
+
 
 class Embedding(nn.Module):
     num_embeddings: int
@@ -47,7 +50,10 @@ class Embedding(nn.Module):
         return self.weight[x]
 
     def extra_repr(self) -> str:
-        return f"num_embeddings={self.num_embeddings}, embedding_dim={self.embedding_dim}"
+        return (
+            f"num_embeddings={self.num_embeddings}, embedding_dim={self.embedding_dim}"
+        )
+
 
 def test_embedding(Embedding):
     """Indexing into the embedding should fetch the corresponding rows of the embedding."""
@@ -58,18 +64,22 @@ def test_embedding(Embedding):
     t.testing.assert_close(out[2], emb.weight[5])
 
 
-
 # ============================= LayerNorm =============================
 
-class LayerNorm(nn.Module):
 
-    def __init__(self, normalized_shape: Union[int, List[int]], eps: float = 1e-05, elementwise_affine: bool = True):
+class LayerNorm(nn.Module):
+    def __init__(
+        self,
+        normalized_shape: Union[int, List[int]],
+        eps: float = 1e-05,
+        elementwise_affine: bool = True,
+    ):
         super().__init__()
         if isinstance(normalized_shape, int):
             normalized_shape = (normalized_shape,)
         self.normalized_shape = normalized_shape
         self.eps = eps
-        
+
         self.elementwise_affine = elementwise_affine
         if self.elementwise_affine:
             self.weight = nn.Parameter(t.ones(normalized_shape))
@@ -78,7 +88,7 @@ class LayerNorm(nn.Module):
     def forward(self, x: t.Tensor) -> t.Tensor:
         assert len(self.normalized_shape) <= len(x.shape)
 
-        dims = tuple(range(len(x.shape)-len(self.normalized_shape), len(x.shape)))
+        dims = tuple(range(len(x.shape) - len(self.normalized_shape), len(x.shape)))
 
         mean = x.mean(dim=dims, keepdims=True)
         var = x.var(dim=dims, unbiased=False, keepdims=True)
@@ -92,20 +102,18 @@ class LayerNorm(nn.Module):
         return f"normalized_shape={self.normalized_shape}, eps{self.eps}, elementwise_affine={self.elementwise_affine}"
 
 
-
 # ============================= GELU =============================
 
-class GELU(nn.Module):
 
+class GELU(nn.Module):
     def forward(self, x: t.Tensor) -> t.Tensor:
         return 0.5 * x * (1 + t.tanh((2 / t.pi) * (x + 0.044715 * x**3)))
 
 
-
 # ============================= Dropout =============================
 
-class Dropout(nn.Module):
 
+class Dropout(nn.Module):
     def __init__(self, p: float):
         super().__init__()
         assert 0 <= p < 1

@@ -5,16 +5,18 @@ from IPython.display import display
 import pandas as pd
 import numpy as np
 
+
 def test_embedding(Embedding):
     """Indexing into the embedding should fetch the corresponding rows of the embedding."""
     emb = Embedding(6, 100)
     out = emb(t.tensor([1, 3, 5], dtype=t.int64))
-    t.testing.assert_close(out[0], emb.weight[1])
-    t.testing.assert_close(out[1], emb.weight[3])
-    t.testing.assert_close(out[2], emb.weight[5])
+    t.testing.assert_allclose(out[0], emb.weight[1])
+    t.testing.assert_allclose(out[1], emb.weight[3])
+    t.testing.assert_allclose(out[2], emb.weight[5])
 
     emb = Embedding(30000, 500)
-    t.testing.assert_close(emb.weight.std().item(), 1.0, rtol=0, atol=0.005)
+    t.testing.assert_allclose(emb.weight.std().item(), 1.0, rtol=0, atol=0.005)
+
 
 def test_layernorm_mean_1d(LayerNorm):
     """If an integer is passed, this means normalize over the last dimension which should have that size."""
@@ -25,6 +27,7 @@ def test_layernorm_mean_1d(LayerNorm):
     assert max_mean < 1e-5, f"Normalized mean should be about 0, got {max_mean}"
     print(f"All tests in `test_layernorm_mean_1d` passed.")
 
+
 def test_layernorm_mean_2d(LayerNorm):
     """If normalized_shape is 2D, should normalize over both the last two dimensions."""
     x = t.randn(20, 10)
@@ -34,6 +37,7 @@ def test_layernorm_mean_2d(LayerNorm):
     assert max_mean < 1e-5, f"Normalized mean should be about 0, got {max_mean}"
     print(f"All tests in `test_layernorm_mean_2d` passed.")
 
+
 def test_layernorm_std(LayerNorm):
     """If epsilon is small enough and no elementwise_affine, the output variance should be very close to 1."""
     x = t.randn(20, 10)
@@ -42,6 +46,7 @@ def test_layernorm_std(LayerNorm):
     var_diff = (1 - out.var(-1, unbiased=False)).abs().max().item()
     assert var_diff < 1e-6, f"Var should be about 1, off by {var_diff}"
     print(f"All tests in `test_layernorm_std` passed.")
+
 
 def test_layernorm_exact(LayerNorm):
     """Your LayerNorm's output should match PyTorch for equal epsilon, up to floating point rounding error.
@@ -55,6 +60,7 @@ def test_layernorm_exact(LayerNorm):
     expected = ln2(x)
     t.testing.assert_close(actual, expected)
     print(f"All tests in `test_layernorm_exact` passed.")
+
 
 def test_layernorm_backward(LayerNorm):
     """The backwards pass should also match PyTorch exactly."""
@@ -77,17 +83,23 @@ def test_layernorm_backward(LayerNorm):
     t.testing.assert_close(x.grad, x2.grad, atol=1e-5, rtol=1e-5)
     print(f"All tests in `test_layernorm_backward` passed.")
 
+
 def test_dropout_eval(Dropout):
     dropout = Dropout(p=0.1).eval()
     x = t.randn((3, 4))
-    t.testing.assert_close(x, dropout(x), msg="Failed on eval mode (shouldn't change tensor).")
+    t.testing.assert_close(
+        x, dropout(x), msg="Failed on eval mode (shouldn't change tensor)."
+    )
     print(f"All tests in `test_dropout_eval` passed.")
+
 
 def test_dropout_training(Dropout):
 
     dropout = Dropout(p=0).train()
     x = t.rand((1000, 1000))
-    t.testing.assert_close(x, dropout(x), msg="Failed on p=0 (dropout shouldn't change tensor)")
+    t.testing.assert_close(
+        x, dropout(x), msg="Failed on p=0 (dropout shouldn't change tensor)"
+    )
 
     for p in (0.1, 0.5, 0.9):
         dropout = Dropout(p=p).train()
@@ -99,10 +111,15 @@ def test_dropout_training(Dropout):
         close_to_ratio = t.abs(x_dropout / x - (1 / (1 - p))) < 0.001
         fraction_close_to_ratio = close_to_ratio.sum() / close_to_ratio.numel()
 
-        assert abs(fraction_close_to_zero - p) < 0.01, f"p={p}, Wrong number of values set to zero"
-        assert fraction_close_to_zero + fraction_close_to_ratio > 0.995, f"p={p}, Incorrect scaling"
-    
+        assert (
+            abs(fraction_close_to_zero - p) < 0.01
+        ), f"p={p}, Wrong number of values set to zero"
+        assert (
+            fraction_close_to_zero + fraction_close_to_ratio > 0.995
+        ), f"p={p}, Incorrect scaling"
+
     print(f"All tests in `test_dropout_training` passed.")
+
 
 def plot_gelu(GELU):
     gelu = GELU()
