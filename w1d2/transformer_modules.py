@@ -8,8 +8,6 @@ from einops import rearrange, reduce, repeat
 
 import cnn_modules as cm
 
-device = t.device("cuda" if t.cuda.is_available() else "cpu")
-
 
 class Embedding(nn.Module):
     """Returns an embedding of input tokens"""
@@ -110,7 +108,7 @@ class Dropout(nn.Module):
             dropout_matrix[dropout_matrix < self.p] = 0
             dropout_matrix[dropout_matrix >= self.p] = 1
             # should this be on the device?
-            out = x * dropout_matrix.to(device)
+            out = x * dropout_matrix.to(x.device)
             out = out / (1 - self.p)
             return out
         else:
