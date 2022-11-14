@@ -46,8 +46,7 @@ class PositionalEncoding(nn.Module):
         enc_2d = np.zeros((max_seq_len, embedding_dim))
         enc_2d[:, ::2] = np.sin(freqs)
         enc_2d[:, 1::2] = np.cos(freqs)
-        self.enc = t.from_numpy(enc_2d)
-        self.register_buffer("pos_enc", self.enc)
+        self.register_buffer("pos_enc", t.from_numpy(enc_2d))
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         """
@@ -172,6 +171,7 @@ class MultiheadMaskedAttention(nn.Module):
 
         # create lower-left triangle of ones, including the diagonal
         mask = t.tril(t.ones(seq_len, seq_len), diagonal=0)
+        mask.to(Q.device)
         # fill with close-to-neg-inf values where mask==0
         scores = scores.masked_fill(mask == 0, -1e9)
 
