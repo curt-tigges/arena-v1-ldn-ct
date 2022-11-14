@@ -24,7 +24,7 @@ class Embedding(nn.Module):
 
     def forward(self, x: t.LongTensor) -> t.Tensor:
         """For each integer in the input, return that row of the embedding."""
-        return self.weight[x]
+        return self.weight[x.long]
 
     def extra_repr(self) -> str:
         return f"{self.num_embed}, {self.embed_dim}"
@@ -194,8 +194,8 @@ class MultiheadMaskedAttention(nn.Module):
         Q, K, V = t.tensor_split(out, 3, dim=-1)
 
         Z = self.multihead_masked_attention(Q, K, V, self.num_heads)
-
-        return self.ff(Z)
+        out = self.ff(Z)
+        return out
 
 
 class MLP(nn.Module):
