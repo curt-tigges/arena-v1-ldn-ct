@@ -175,7 +175,7 @@ class MultiheadMaskedAttention(nn.Module):
 
         scores = t.softmax(scores, dim=-1)
         Z = einsum(
-            "B nheads Qseq Kseq, B Qseq nheads headsize -> B Qseq nheads headsize",
+            "B nheads Qseq Kseq, B Kseq nheads headsize -> B Qseq nheads headsize",
             scores,
             V,
         )
