@@ -180,9 +180,11 @@ class MultiheadMaskedAttention(nn.Module):
         scores /= Q.shape[-1] ** 0.5
 
         # create lower-left triangle of ones, including the diagonal
-        mask = t.tril(t.ones(seq_len, seq_len), diagonal=0)
-        mask.to(Q.device)
+        mask = t.tril(t.ones(seq_len, seq_len).to(Q.device), diagonal=0)
+        #mask = mask.to(Q.device)
         # fill with close-to-neg-inf values where mask==0
+        #print(mask.device)
+        #print(scores.device)
         scores = scores.masked_fill(mask == 0, -1e9)
 
         scores = t.softmax(scores, dim=-1)
