@@ -3,11 +3,23 @@ import torch as t
 from torch import nn
 import numpy as np
 from fancy_einsum import einsum
+from dataclasses import dataclass
 
 from einops import rearrange, reduce, repeat
 
 import cnn_modules as cm
 
+@dataclass(frozen=True)
+class TransformerConfig:
+    '''Constants used throughout your decoder-only transformer model.'''
+
+    num_layers: int
+    num_heads: int
+    vocab_size: int
+    hidden_size: int
+    max_seq_len: int
+    dropout: float = 0.1
+    layer_norm_epsilon: float = 1e-05
 
 class Embedding(nn.Module):
     """Returns an embedding of input tokens"""
@@ -22,7 +34,7 @@ class Embedding(nn.Module):
 
     def forward(self, x: t.LongTensor) -> t.Tensor:
         """For each integer in the input, return that row of the embedding."""
-        return self.weight[x.long]
+        return self.weight[x]
 
     def extra_repr(self) -> str:
         return f"{self.num_embed}, {self.embed_dim}"
@@ -136,8 +148,8 @@ class MultiheadMaskedAttention(nn.Module):
         super().__init__()
         self.num_heads = num_heads
         self.query_size = int(hidden_size / num_heads)
-        self.qkv = nn.Linear(hidden_size, 3 * hidden_size)
-        self.ff = nn.Linear(hidden_size, hidden_size)
+        self.qkv = cm.Linear(hidden_size, 3 * hidden_size)
+        self.ff = cm.Linear(hidden_size, hidden_size)
 
     def multihead_masked_attention(
         self, Q: t.Tensor, K: t.Tensor, V: t.Tensor, num_heads: int
@@ -199,12 +211,54 @@ class MultiheadMaskedAttention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, hidden_size, dropout):
         super().__init__()
-        self.linear1 = nn.Linear(hidden_size, 4 * hidden_size)
+        self.linear1 = cm.Linear(hidden_size, 4 * hidden_size)
         self.gelu = GELU()
-        self.linear2 = nn.Linear(4 * hidden_size, hidden_size)
+        self.linear2 = cm.Linear(4 * hidden_size, hidden_size)
         self.dropout = Dropout(p=dropout)
 
     def forward(self, x):
         out = self.gelu(self.linear1(x))
         out = self.dropout(self.linear2(out))
+        return out
+
+class DecoderBlock(nn.Module):
+
+    def __init__(self, config: TransformerConfig):
+        super().__init__()
+        self.attn = MultiheadMaskedAttention(config.hidden_size, config.num_heads)
+        self.lnorm1 = LayerNorm(config.hidden_size, eps=config.layer_norm_epsilon)
+        self.mlp = MLP(config.hidden_size, config.dropout)
+        self.lnorm2 = LayerNorm(config.hidden_size, eps=config.layer_norm_epsilon)
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        normed_attn = self.lnorm1(self.attn(x))
+        out = normed_attn + x
+        normed_mlp = self.lnorm2(self.mlp(out))
+        out = normed_mlp + out
+        return out
+
+class DecoderOnlyTransformer(nn.Module):
+
+    def __init__(self, config: TransformerConfig):
+        super().__init__()
+        self.emb = Embedding(config.vocab_size, config.hidden_size)
+        self.pos_enc = PositionalEncoding(config.max_seq_len, config.hidden_size)
+        self.dropout = Dropout(p=config.dropout)
+
+        decoders = [DecoderBlock(config) for l in range(config.num_layers)]
+        self.decoders = nn.Sequential(*decoders)
+        
+        self.post_norm = LayerNorm(config.hidden_size)
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        embedding = self.emb(x.long())
+        embedding = self.pos_enc(embedding)
+        embedding = self.dropout(embedding)
+        embedding = embedding.to(t.float32)
+
+        out = self.decoders(embedding)
+        out = self.post_norm(out)
+
+        out = einsum("B S E, V E -> B S V", out, self.emb.weight)
+
         return out
