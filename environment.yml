@@ -3,12 +3,10 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - jupyterlab_widgets=1.0.0
-  - numpy=1.23.1
-  - openssl=1.1.1q
-  - pip=22.2.2
-  - plotly=5.9.0
   - python=3.9.13
+  - pip=22.2.2
+  - numpy=1.23.1
+  - plotly=5.9.0
   - pip:
     - einops==0.5.0
     - fancy-einsum==0.0.3
