@@ -1,6 +1,7 @@
 import numpy as np
 import torch as t
 from torch import nn
+from torch.utils.data import Dataset
 import numpy as np
 from fancy_einsum import einsum
 from dataclasses import dataclass
@@ -21,305 +22,32 @@ class TransformerConfig:
     dropout: float = 0.1
     layer_norm_epsilon: float = 1e-05
 
-class ReLU(nn.Module):
-    def forward(self, x: t.Tensor) -> t.Tensor:
-        return t.maximum(x, t.tensor(0.0))
-
-
-class Flatten(nn.Module):
-    def __init__(self, start_dim: int = 1, end_dim: int = -1) -> None:
-        super().__init__()
-        self.start_dim = start_dim
-        self.end_dim = end_dim
-
-    def forward(self, input: t.Tensor) -> t.Tensor:
-        """Flatten out dimensions from start_dim to end_dim, inclusive of both."""
-        t_dims = input.shape
-        end = self.end_dim if self.end_dim >= 0 else len(t_dims) + self.end_dim
-        flattened_size = functools.reduce(
-            lambda x, y: x * y, t_dims[self.start_dim : end + 1]
-        )
-
-        new_shape = t_dims[: self.start_dim] + (flattened_size,) + t_dims[end + 1 :]
-
-        return t.reshape(input, new_shape)
-
-    def extra_repr(self) -> str:
-        return f"Reshapes from dim {self.start_dim} to {self.end_dim} inclusive"
-
-
-class Linear(nn.Module):
-    def __init__(self, in_features: int, out_features: int, bias=True):
-        """A simple linear (technically, affine) transformation.
-
-        The fields should be named `weight` and `bias` for compatibility with PyTorch.
-        If `bias` is False, set `self.bias` to None.
-        """
-        super().__init__()
-        k = 1 / np.sqrt(in_features)
-
-        self.weight = nn.Parameter(
-            t.zeros(out_features, in_features).uniform_(-k, to=k)
-        )
-        self.bias = (
-            None if not bias else nn.Parameter(t.zeros(out_features).uniform_(-k, to=k))
-        )
-
-    def forward(self, x: t.Tensor) -> t.Tensor:
-        """
-        x: shape (*, in_features)
-        Return: shape (*, out_features)
-        """
-        out = einsum("... in_f, out_f in_f -> ... out_f", x, self.weight)
-        if self.bias != None:
-            out += self.bias
-
-        return out
-
-    def extra_repr(self) -> str:
-        pass
-
-
-class Embedding(nn.Module):
-    """Returns an embedding of input tokens"""
-
-    def __init__(self, num_embeddings: int, embedding_dim: int):
-        super().__init__()
-        self.num_embed = num_embeddings
-        self.embed_dim = embedding_dim
-        self.weight = nn.Parameter(
-            t.ones(num_embeddings, embedding_dim).uniform_(-1, to=1)
-        )
-
-    def forward(self, x: t.LongTensor) -> t.Tensor:
-        """For each integer in the input, return that row of the embedding."""
-        return self.weight[x]
-
-    def extra_repr(self) -> str:
-        return f"{self.num_embed}, {self.embed_dim}"
-
-
-class PositionalEncoding(nn.Module):
-    """Adds sin-cosine positional encoding to the input"""
-
-    def __init__(self, max_seq_len: int, embedding_dim: int):
-        super().__init__()
-        self.max_seq_len = max_seq_len
-        self.embed_dim = embedding_dim
-        self.n = 10000
-
-        freqs = np.outer(
-            np.arange(max_seq_len),
-            1 / self.n ** (2 * np.arange(embedding_dim // 2) / embedding_dim),
-        )
-        enc_2d = np.zeros((max_seq_len, embedding_dim))
-        enc_2d[:, ::2] = np.sin(freqs)
-        enc_2d[:, 1::2] = np.cos(freqs)
-        self.register_buffer("pos_enc", t.from_numpy(enc_2d))
-
-    def forward(self, x: t.Tensor) -> t.Tensor:
-        """
-        x: shape (batch, seq_len, embedding_dim)
-        """
-        return x + self.pos_enc[: x.shape[1], :]
-
-    def extra_repr(self) -> str:
-        return f"max_freq={self.n}, max_seq_len={self.max_seq_len}, embedding_dim={self.embed_dim}"
-
-
-class LayerNorm(nn.Module):
-    """Performs normalization over specified dimensions"""
-
-    def __init__(
-        self, normalized_shape, eps: float = 1e-05, elementwise_affine: bool = True
-    ):
-        super().__init__()
-        self.norm_shape = (
-            (normalized_shape,)
-            if isinstance(normalized_shape, int)
-            else normalized_shape
-        )
-        self.eps = eps
-        self.elementwise_affine = elementwise_affine
-
-        if self.elementwise_affine:
-            self.weight = nn.Parameter(t.ones(normalized_shape))
-            self.bias = nn.Parameter(t.zeros(normalized_shape))
-
-    def forward(self, x: t.Tensor) -> t.Tensor:
-        """Normalize along each embedding"""
-        x_dims, norm_shape_dims = len(x.shape), len(self.norm_shape)
-        norm_dims = tuple([d for d in range(x_dims - norm_shape_dims, x_dims)])
-
-        self.mean = t.mean(x, dim=norm_dims, keepdim=True)
-        self.var = t.var(x, dim=norm_dims, unbiased=False, keepdim=True)
-
-        out = (x - self.mean) / t.sqrt(self.var + self.eps)
-
-        if self.elementwise_affine:
-            out = out * self.weight + self.bias
-
-        return out
-
-    def extra_repr(self) -> str:
-        return f"normalized_shape={self.norm_shape}, eps={self.eps}, elementwise_affine={self.elementwise_affine}"
-
-
-class Dropout(nn.Module):
-    """Returns activations to which the Dropout technique has been applied"""
-
-    def __init__(self, p: float):
-        super().__init__()
-        self.p = p
-
-    def forward(self, x: t.Tensor) -> t.Tensor:
-        if self.training:
-            d_shape = x.shape
-            dropout_matrix = t.rand(d_shape)
-            dropout_matrix[dropout_matrix < self.p] = 0
-            dropout_matrix[dropout_matrix >= self.p] = 1
-            # should this be on the device?
-            out = x * dropout_matrix.to(x.device)
-            out = out / (1 - self.p)
-            return out
-        else:
-            return x
-
-    def extra_repr(self) -> str:
-        return f"p={self.p}"
-
-
-class GELU(nn.Module):
-    """Performs the GELU approximation"""
-
-    def forward(self, x: t.Tensor) -> t.Tensor:
-        out = (
-            x * 0.5 * (1 + t.tanh(t.sqrt(t.tensor(2 / t.pi)) * (x + 0.044715 * x**3)))
-        )
-        return out
-
-
-class MultiheadMaskedAttention(nn.Module):
-    W_QKV: nn.Linear
-    W_O: nn.Linear
-
-    def __init__(self, hidden_size: int, num_heads: int):
-        super().__init__()
-        self.num_heads = num_heads
-        self.query_size = int(hidden_size / num_heads)
-        self.qkv = Linear(hidden_size, 3 * hidden_size)
-        self.ff = Linear(hidden_size, hidden_size)
-
-    def multihead_masked_attention(
-        self, Q: t.Tensor, K: t.Tensor, V: t.Tensor, num_heads: int
-    ):
-        """
-        Implements multihead masked attention on the matrices Q, K and V.
-
-        Q: shape (batch, seq, nheads*headsize)
-        K: shape (batch, seq, nheads*headsize)
-        V: shape (batch, seq, nheads*headsize)
-
-        returns: shape (batch, seq, nheads*headsize)
-        """
-        Q = rearrange(
-            Q, "B S (nheads headsize) -> B S nheads headsize", nheads=num_heads
-        )
-        K = rearrange(
-            K, "B S (nheads headsize) -> B S nheads headsize", nheads=num_heads
-        )
-        V = rearrange(
-            V, "B S (nheads headsize) -> B S nheads headsize", nheads=num_heads
-        )
-
-        batch_size, seq_len, nheads, headsize = Q.shape
-        scores = einsum(
-            "B Qseq nheads headsize, B Kseq nheads headsize -> B nheads Qseq Kseq", Q, K
-        )
-        scores /= Q.shape[-1] ** 0.5
-
-        # create lower-left triangle of ones, including the diagonal
-        mask = t.tril(t.ones(seq_len, seq_len).to(Q.device), diagonal=0)
-        #mask = mask.to(Q.device)
-        # fill with close-to-neg-inf values where mask==0
-        #print(mask.device)
-        #print(scores.device)
-        scores = scores.masked_fill(mask == 0, -1e9)
-
-        scores = t.softmax(scores, dim=-1)
-        Z = einsum(
-            "B nheads Qseq Kseq, B Kseq nheads headsize -> B Qseq nheads headsize",
-            scores,
-            V,
-        )
-        Z = rearrange(Z, "B Qseq nheads headsize -> B Qseq (nheads headsize)")
-        return Z
-
-    def forward(self, x: t.Tensor) -> t.Tensor:
-        """
-        x: shape (batch, seq, hidden_size)
-
-        Return: shape (batch, seq, hidden_size)
-        """
-        out = self.qkv(x)
-        Q, K, V = t.tensor_split(out, 3, dim=-1)
-
-        Z = self.multihead_masked_attention(Q, K, V, self.num_heads)
-        out = self.ff(Z)
-        return out
-
-
-class MLP(nn.Module):
-    def __init__(self, hidden_size, dropout):
-        super().__init__()
-        self.linear1 = Linear(hidden_size, 4 * hidden_size)
-        self.gelu = GELU()
-        self.linear2 = Linear(4 * hidden_size, hidden_size)
-        self.dropout = Dropout(p=dropout)
-
-    def forward(self, x):
-        out = self.gelu(self.linear1(x))
-        out = self.dropout(self.linear2(out))
-        return out
-
-class DecoderBlock(nn.Module):
-
-    def __init__(self, config: TransformerConfig):
-        super().__init__()
-        self.attn = MultiheadMaskedAttention(config.hidden_size, config.num_heads)
-        self.lnorm1 = LayerNorm(config.hidden_size, eps=config.layer_norm_epsilon)
-        self.mlp = MLP(config.hidden_size, config.dropout)
-        self.lnorm2 = LayerNorm(config.hidden_size, eps=config.layer_norm_epsilon)
-
-    def forward(self, x: t.Tensor) -> t.Tensor:
-        normed_attn = self.lnorm1(self.attn(x))
-        out = normed_attn + x
-        normed_mlp = self.lnorm2(self.mlp(out))
-        out = normed_mlp + out
-        return out
-
-class DecoderOnlyTransformer(nn.Module):
-
-    def __init__(self, config: TransformerConfig):
-        super().__init__()
-        self.emb = Embedding(config.vocab_size, config.hidden_size)
-        self.pos_enc = PositionalEncoding(config.max_seq_len, config.hidden_size)
-        self.dropout = Dropout(p=config.dropout)
-
-        decoders = [DecoderBlock(config) for l in range(config.num_layers)]
-        self.decoders = nn.Sequential(*decoders)
+class WordsDataset(Dataset):
+    def __init__(self, seq_len, filename, tokenizer, truncate=None):
+        self.seq_len = seq_len
+        self.filename = filename
         
-        self.post_norm = LayerNorm(config.hidden_size)
+        with open(filename, 'r') as textfile:
+            text = textfile.read()
+        
+        tokenizer.build_dict(text)
+        self.tokens = tokenizer.encode(text)
+        
+        word_count = len(self.tokens)
 
-    def forward(self, x: t.Tensor) -> t.Tensor:
-        embedding = self.emb(x.long())
-        embedding = self.pos_enc(embedding)
-        embedding = self.dropout(embedding)
-        embedding = embedding.to(t.float32)
+        if truncate:
+            word_count = int(word_count * truncate)
 
-        out = self.decoders(embedding)
-        out = self.post_norm(out)
+        self.x_seqs, self.y_seqs = [], []
+        
+        for pos in range(0, word_count - seq_len - 1):
+            self.x_seqs.append(t.tensor(self.tokens[pos:pos+self.seq_len]))
+            self.y_seqs.append(t.tensor(self.tokens[pos+1:pos+self.seq_len+1]))
+        self.x_seqs = t.stack(self.x_seqs)
+        self.y_seqs = t.stack(self.y_seqs)
 
-        out = einsum("B S E, V E -> B S V", out, self.emb.weight)
+    def __len__(self):
+        return len(self.x_seqs)
 
-        return out
+    def __getitem__(self, idx):
+        return self.x_seqs[idx], self.y_seqs[idx]

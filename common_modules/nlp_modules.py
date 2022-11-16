@@ -1,6 +1,10 @@
 import torch as t
 from torch.utils.data import Dataset
 import numpy as np
+import re
+import pickle
+from typing import Optional, Union
+
 
 class WordsDataset(Dataset):
     def __init__(self, seq_len, filename, tokenizer, truncate=None):
@@ -10,7 +14,7 @@ class WordsDataset(Dataset):
         with open(filename, 'r') as textfile:
             text = textfile.read()
         
-        tokenizer.build_dict(text)
+        tokenizer.build_dict(text, save=True)
         self.tokens = tokenizer.encode(text)
         
         word_count = len(self.tokens)
@@ -33,9 +37,6 @@ class WordsDataset(Dataset):
         return self.x_seqs[idx], self.y_seqs[idx]
 
 
-from typing import Optional, Union
-import re
-
 class WordsTokenizer():
     model_max_length: int
 
@@ -44,15 +45,30 @@ class WordsTokenizer():
         self.id_word_map = dict()
         self.model_max_length = model_max_length
 
-    def build_dict(self, initial_text):
+    def build_dict(self, initial_text, save=False):
 
         split_text = re.split(r"\b", initial_text)
-        
 
         # create token id mapping
         unique_tokens = set(split_text)
         self.word_id_map = {word:id for id, word in enumerate(unique_tokens)}
         self.id_word_map = {id:word for word, id in self.word_id_map.items()}
+
+        if save:
+            file = open("word_id_map.pkl", "wb")
+            pickle.dump(self.word_id_map, file)
+            file.close()
+
+            file = open("id_word_map.pkl", "wb")
+            pickle.dump(self.id_word_map, file)
+            file.close()
+
+    def load_saved(self):
+        file = open("word_id_map.pkl", "rb")
+        self.word_id_map = pickle.load(file)
+
+        file = open("id_word_map.pkl", "rb")
+        self.id_word_map = pickle.load(file)
 
     def encode(self, text: str, return_tensors: Optional[str] = None) -> Union[list, t.Tensor]:
         '''
