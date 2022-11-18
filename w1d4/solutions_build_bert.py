@@ -18,7 +18,7 @@ from functions_from_previous_days import *
 import utils
 
 device = t.device("cuda" if t.cuda.is_available() else "cpu")
-assert str(device) == "cuda"
+#assert str(device) == "cuda"
 
 # %%
 # ============================= CONFIG =============================
