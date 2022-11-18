@@ -126,6 +126,14 @@ class Net(nn.Module):
     def forward(self, x: t.Tensor) -> t.Tensor:
         return self.layers(x)
 
+class Net2(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.base = nn.Sequential(nn.Linear(2, 5), nn.ReLU())
+        self.classifier = nn.Sequential(nn.Linear(5, 3), nn.ReLU())
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        return self.classifier(self.base(x))
+
 def construct_param_config_from_description(description, model):
     param_config = []
     for param_group in description:
@@ -152,14 +160,14 @@ def test_sgd_param_groups(SGD):
     for description, kwargs in test_cases:
         t.manual_seed(819)
 
-        model = Net()
+        model = Net2()
         param_config = construct_param_config_from_description(description, model)
         opt = optim.SGD(param_config, **kwargs)
         _train_with_opt(model, opt)
         w0_correct = model.base[0].weight
         
         t.manual_seed(819)
-        model = Net()
+        model = Net2()
         param_config = construct_param_config_from_description(description, model)
         opt = SGD(param_config, **kwargs)
         _train_with_opt(model, opt)
@@ -176,7 +184,7 @@ def test_sgd_param_groups(SGD):
         dict(momentum=0.9, weight_decay=0.1),
     )
     try:
-        model = Net()
+        model = Net2()
         param_config = construct_param_config_from_description(description, model)
         opt = SGD(param_config, **kwargs)
     except:
