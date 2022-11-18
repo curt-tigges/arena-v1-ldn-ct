@@ -35,8 +35,8 @@ device = t.device("cuda" if t.cuda.is_available() else "cpu")
 
 def maybe_download(url: str, path: str) -> None:
     """Download the file from url and save it to path. If path already exists, do nothing."""
-    if not os.path.exists(IMDB_PATH):
-        with open(IMDB_PATH, "wb") as file:
+    if not os.path.exists(path):
+        with open(path, "wb") as file:
             data = requests.get(url).content
             file.write(data)
 
