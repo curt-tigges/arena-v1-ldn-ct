@@ -147,14 +147,14 @@ class BertCommon(nn.Module):
             token_type_ids = t.zeros_like(x)
 
         embedding = self.emb(x.long()) + self.pos_emb(pos.long()) + self.tkn_emb(token_type_ids.long())
-
+        #print(embedding.device)
         # Norm & Dropout
         out = self.lnorm(embedding)
         out = self.dropout(out)
         
         # Mask
         if one_zero_attention_mask:
-            mask = make_additive_attention_mask(one_zero_attention_mask)
+            mask = make_additive_attention_mask(one_zero_attention_mask).to(x.device)
         else:
             mask = None
 
