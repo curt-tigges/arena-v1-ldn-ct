@@ -1,3 +1,6 @@
 w2d5/data/
 w2d5/wandb/
 w2d5/BERT-tiny-wiki2.pt
+wandb/
+runs/
+videos/
