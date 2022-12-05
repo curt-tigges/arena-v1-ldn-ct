@@ -313,4 +313,4 @@ def train_convnet(trainloader: DataLoader, testloader: DataLoader, epochs: int, 
     t.save(model, MODEL_FILENAME)
     return loss_list, accuracy_list
 
-loss_list, accuracy_list = train_convnet(trainloader, testloader, epochs, loss_fn)
+# loss_list, accuracy_list = train_convnet(trainloader, testloader, epochs, loss_fn)
