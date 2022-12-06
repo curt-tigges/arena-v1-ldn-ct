@@ -12,22 +12,22 @@ from torch.utils.data import DataLoader
 import wandb
 import time
 from dataclasses import dataclass
-from torchvision import transforms, datasets
 import sys
+from torchvision import transforms, datasets
 
-p = r"/home/curttigges/projects/arena-v1-ldn-ct"
+p = r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured"
 # Replace the line above with your own root directory
 os.chdir(p)
 sys.path.append(p)
-sys.path.append(p + r"/w5_chapter5_modelling_objectives")
+sys.path.append(p + r"\w5_chapter5_modelling_objectives")
 
 device = t.device("cuda:0" if t.cuda.is_available() else "cpu")
 # assert str(device) == "cuda:0"
 
 import w5d1_utils
 import w5d1_tests
-from w0d2.solutions import pad1d, pad2d, conv1d_minimal, conv2d_minimal, Conv2d, Linear, ReLU, Pair, IntOrPair
-from w0d3.solutions import BatchNorm2d, Sequential
+from w0d2_chapter0_convolutions.solutions import pad1d, pad2d, conv1d_minimal, conv2d_minimal, Conv2d, Linear, ReLU, Pair, IntOrPair
+from w0d3_chapter0_resnets.solutions import BatchNorm2d, Sequential
 
 MAIN = __name__ == "__main__"
 
@@ -398,8 +398,6 @@ celeb_mini_DCGAN = DCGAN(**celeba_mini_config).to(device).train()
 if MAIN:
     image_size = 64
 
-    
-
     transform = transforms.Compose([
         transforms.Resize((image_size)),
         transforms.CenterCrop(image_size),
@@ -464,6 +462,8 @@ def train_DCGAN(args: DCGANargs) -> DCGAN:
         args.generator_num_features,
         args.n_layers,
     ).to(device).train()
+    optG = t.optim.Adam(model.netG.parameters(), lr=args.lr, betas=args.betas)
+    optD = t.optim.Adam(model.netD.parameters(), lr=args.lr, betas=args.betas)
 
     if args.track:
         wandb.init()
@@ -472,9 +472,6 @@ def train_DCGAN(args: DCGANargs) -> DCGAN:
     for epoch in range(args.epochs):
         
         progress_bar = tqdm(trainloader)
-
-        optG = t.optim.Adam(model.netG.parameters(), lr=args.lr, betas=args.betas)
-        optD = t.optim.Adam(model.netD.parameters(), lr=args.lr, betas=args.betas)
 
         for img_real, label in progress_bar: # remember that label is not used
 
