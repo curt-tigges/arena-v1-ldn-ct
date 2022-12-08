@@ -15,19 +15,19 @@ from dataclasses import dataclass
 import sys
 from torchvision import transforms, datasets
 
-p = r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured"
+p = r"/home/curttigges/projects/arena-v1-ldn-ct"
 # Replace the line above with your own root directory
 os.chdir(p)
 sys.path.append(p)
-sys.path.append(p + r"\w5_chapter5_modelling_objectives")
+sys.path.append(p + r"/w5_chapter5_modelling_objectives")
 
 device = t.device("cuda:0" if t.cuda.is_available() else "cpu")
 # assert str(device) == "cuda:0"
 
 import w5d1_utils
 import w5d1_tests
-from w0d2_chapter0_convolutions.solutions import pad1d, pad2d, conv1d_minimal, conv2d_minimal, Conv2d, Linear, ReLU, Pair, IntOrPair
-from w0d3_chapter0_resnets.solutions import BatchNorm2d, Sequential
+from w0d2.solutions import pad1d, pad2d, conv1d_minimal, conv2d_minimal, Conv2d, Linear, ReLU, Pair, IntOrPair
+from w0d3.solutions import BatchNorm2d, Sequential
 
 MAIN = __name__ == "__main__"
 
@@ -346,7 +346,7 @@ class Discriminator(nn.Module):
 
 def initialize_weights(model) -> None:
     for name, module in model.named_modules():
-        if isinstance(module, ConvTranspose2d):
+        if isinstance(module, ConvTranspose2d) or isinstance(module, Conv2d):
             nn.init.normal_(module.weight.data, 0.0, 0.02)
         elif isinstance(module, BatchNorm2d):
             nn.init.normal_(module.bias.data, 1.0, 0.02)
@@ -406,7 +406,8 @@ if MAIN:
     ])
 
     trainset = datasets.ImageFolder(
-        root=r"celeba",
+        root=r"C:\Users\calsm\Documents\AI Alignment\ARENA\arena-v1-ldn-exercises-restructured\w5_chapter5_modelling_objectives\celeba",
+        # change this line to the absolute filepath of your celeba data directory
         transform=transform
     )
 
@@ -414,7 +415,7 @@ if MAIN:
 
 # ======================== MNIST ========================
 
-# img_size = 24
+# img_size = 28
 
 # from torchvision import datasets, transforms
 # from torch.utils.data import DataLoader
@@ -471,12 +472,12 @@ def train_DCGAN(args: DCGANargs) -> DCGAN:
     
     for epoch in range(args.epochs):
         
-        progress_bar = tqdm(trainloader)
+        progress_bar = tqdm(trainloader, total=int(len(trainloader) * 0.4))
 
-        for img_real, label in progress_bar: # remember that label is not used
+        for i, (img_real, label) in enumerate(progress_bar): # remember that label is not used
 
             img_real = img_real.to(device)
-            noise = t.randn(args.batch_size, model.netG.latent_dim_size).to(device)
+            noise = t.randn(args.batch_size, args.latent_dim_size).to(device)
 
             # ====== DISCRIMINIATOR TRAINING LOOP: maximise log(D(x)) + log(1-D(G(z))) ======
 
@@ -516,6 +517,10 @@ def train_DCGAN(args: DCGANargs) -> DCGAN:
                     images = [wandb.Image(arr) for arr in arrays]
                     wandb.log({"images": images}, step=n_examples_seen)
 
+            # Early stopping
+            if i / len(trainloader) > 0.4:
+                break
+
     name = model.__class__.__name__
     dirname = str(wandb.run.dir) if args.track else "models"
     filename = f"{dirname}/{name}.pt"
@@ -552,6 +557,8 @@ if MAIN:
 
 if MAIN:
     args = DCGANargs(**celeba_mini_config, trainset=trainset)
-
+    args.seconds_between_image_logs = 30
     model = train_DCGAN(args)
+    # arrays = get_generator_output(model.netG, n_examples=16)
+    # w5d1_utils.show_images(rearrange(t.from_numpy(arrays), "b h w c -> b c h w"), rows=2, cols=8)
 # %%
